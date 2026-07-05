@@ -12,6 +12,9 @@ struct NDIRegionApp: App {
                 .environmentObject(store)
         }
         .defaultSize(width: 900, height: 380)
+        // Window tracks content size, so the collapsed bar shrinks the window
+        // to a titlebar strip.
+        .windowResizability(.contentSize)
     }
 }
 
