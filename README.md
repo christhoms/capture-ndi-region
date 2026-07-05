@@ -18,11 +18,24 @@ Two front ends over the same core:
   on open.
 - **ndi-region** — CLI for scripting/launchd.
 
-## Build
+## Download
+
+Grab the latest signed & notarized universal (Apple Silicon + Intel) builds
+from [Releases](https://github.com/christhoms/capture-ndi-region/releases):
+
+- `Capture-NDI-Region-<version>.zip` — the app; unzip and drop in /Applications
+- `ndi-region-cli-<version>.zip` — the CLI binary
+
+You'll also need an NDI runtime if you don't have one — see
+[NDI runtime](#ndi-runtime) below (the app links you to it too).
+
+## Build from source
 
 ```sh
 swift build -c release          # CLI at .build/release/ndi-region
-Scripts/make-app.sh             # app at "dist/Capture NDI Region.app"
+Scripts/make-app.sh             # ad-hoc-signed app at "dist/Capture NDI Region.app"
+Scripts/make-release.sh 1.2.3   # signed + notarized release zips (needs a
+                                # Developer ID cert and notarytool credentials)
 ```
 
 ## App
