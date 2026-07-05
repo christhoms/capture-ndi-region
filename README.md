@@ -35,6 +35,14 @@ Auto-start. Add rows with **+** for multiple simultaneous NDI feeds.
 
 Config lives at `~/Library/Application Support/CaptureNDIRegion/feeds.json`.
 
+**Show mode:** the window is designed to disappear. The close button doesn't
+quit — it collapses the window to a slim titlebar strip (live-feed count, an
+expand chevron, a quit button); it also auto-collapses after launch when
+auto-start feeds come up cleanly. Pressing close again while collapsed — or
+Cmd-W / Cmd-Q any time — quits instantly. Fullscreen is disabled (it makes no
+sense for a utility strip). Launch with `CNR_START_COLLAPSED=1` to start
+collapsed, e.g. from launchd.
+
 First launch prompts for Screen Recording permission. If it's missing (or you
 hit Deny by accident), the app shows a recovery banner: **Request Again** resets
 the app's TCC entry (`tccutil reset ScreenCapture <bundle-id>`) so the system

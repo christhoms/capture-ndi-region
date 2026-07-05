@@ -18,7 +18,7 @@ enum ScreenPermission: Equatable {
 }
 
 @MainActor
-final class FeedStore: ObservableObject {
+final class FeedStore: NSObject, ObservableObject {
     @Published var feeds: [Feed] = [] {
         didSet { if !isLoading { save() } }
     }
@@ -27,8 +27,11 @@ final class FeedStore: ObservableObject {
     @Published private(set) var statuses: [UUID: FeedStatus] = [:]
     @Published private(set) var permission: ScreenPermission = .granted
     @Published private(set) var ndiRuntimeMissing = false
+    /// Show-mode: window shrunk to a slim titlebar strip.
+    @Published var collapsed = false
 
     private var permissionPoll: Task<Void, Never>?
+    private weak var window: NSWindow?
 
     private struct Running {
         let capture: RegionCapture
@@ -53,7 +56,9 @@ final class FeedStore: ObservableObject {
             .appendingPathComponent("NDIRegion/feeds.json")
     }
 
-    init() {
+    override init() {
+        super.init()
+        collapsed = ProcessInfo.processInfo.environment["CNR_START_COLLAPSED"] == "1"
         isLoading = true
         let data = (try? Data(contentsOf: configURL)) ?? (try? Data(contentsOf: legacyConfigURL))
         if let data, let saved = try? JSONDecoder().decode([Feed].self, from: data),
@@ -68,6 +73,36 @@ final class FeedStore: ObservableObject {
     private func save() {
         if let data = try? JSONEncoder().encode(feeds) {
             try? data.write(to: configURL, options: .atomic)
+        }
+    }
+
+    var liveFeedCount: Int {
+        statuses.values.reduce(0) { count, status in
+            if case .running = status { return count + 1 }
+            return count
+        }
+    }
+
+    // MARK: - Window behaviour (no fullscreen, close = collapse)
+
+    func configure(window: NSWindow) {
+        guard self.window !== window else { return }
+        self.window = window
+        // A utility window — fullscreen makes no sense for it.
+        window.collectionBehavior.insert(.fullScreenNone)
+        window.standardWindowButton(.zoomButton)?.isEnabled = false
+        // Close collapses to the titlebar strip; close again (or Cmd-W/Cmd-Q) quits.
+        if let close = window.standardWindowButton(.closeButton) {
+            close.target = self
+            close.action = #selector(closeButtonClicked)
+        }
+    }
+
+    @objc private func closeButtonClicked() {
+        if collapsed {
+            NSApp.terminate(nil)
+        } else {
+            collapsed = true
         }
     }
 
@@ -93,6 +128,11 @@ final class FeedStore: ObservableObject {
         guard permission == .granted else { return }
         for feed in feeds where feed.autoStart {
             await start(id: feed.id)
+        }
+        // Show-mode: auto-started feeds are live and nothing needs attention,
+        // so get out of the way.
+        if liveFeedCount > 0 && !ndiRuntimeMissing {
+            collapsed = true
         }
     }
 

@@ -1,10 +1,74 @@
 import RegionCore
 import SwiftUI
 
+/// Hands the hosting NSWindow to the store so it can adjust chrome behaviour.
+struct WindowConfigurator: NSViewRepresentable {
+    let onWindow: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            if let window = view.window { onWindow(window) }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async {
+            if let window = nsView.window { onWindow(window) }
+        }
+    }
+}
+
 struct ContentView: View {
     @EnvironmentObject var store: FeedStore
 
     var body: some View {
+        Group {
+            if store.collapsed {
+                collapsedBar
+            } else {
+                fullView
+            }
+        }
+        .background(WindowConfigurator { window in
+            store.configure(window: window)
+        })
+        .task { await store.onLaunch() }
+    }
+
+    /// Titlebar-strip mode: just enough to see it's alive and kill it fast.
+    private var collapsedBar: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(store.liveFeedCount > 0 ? Color.green : Color.secondary)
+                .frame(width: 9, height: 9)
+            Text(store.liveFeedCount > 0
+                ? "\(store.liveFeedCount) feed\(store.liveFeedCount == 1 ? "" : "s") live"
+                : "idle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                store.collapsed = false
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.borderless)
+            .help("Expand")
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                Image(systemName: "power")
+            }
+            .buttonStyle(.borderless)
+            .help("Quit")
+        }
+        .padding(.horizontal, 10)
+        .frame(width: 280, height: 30)
+    }
+
+    private var fullView: some View {
         VStack(spacing: 0) {
             if store.ndiRuntimeMissing {
                 runtimeBanner
@@ -59,7 +123,6 @@ struct ContentView: View {
                 .help("Add another NDI feed")
             }
         }
-        .task { await store.onLaunch() }
     }
 
     private var emptyState: some View {
