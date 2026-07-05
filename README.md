@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Assets/logo_1024.png" width="180" alt="NDI Region — a region of a window, cropped and sent as NDI">
+</p>
+
 # ndi-region
 
 Send a cropped, scaled **region of a macOS window** as an NDI source — the thing
@@ -81,3 +85,12 @@ a resize).
   runtime, NDI Video Monitor's bundled runtime. It prints which one it loaded.
 - Frames are only delivered when the window content changes (ScreenCaptureKit
   behaviour); NDI receivers hold the last frame, so static content is fine.
+- The app icon is generated from the source assets by `swift Scripts/make-icon.swift`
+  (then repackaged into `Assets/AppIcon.icns`).
+
+---
+
+<p align="center">
+  <img src="Assets/DAWG.png" width="90" alt="the studio dawg"><br>
+  <sub>Quality assurance by the studio dawg.</sub>
+</p>
