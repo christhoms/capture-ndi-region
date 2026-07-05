@@ -16,6 +16,9 @@ struct ContentView: View {
                     ForEach($store.feeds) { $feed in
                         FeedRow(feed: $feed)
                     }
+                    if store.feeds.isEmpty {
+                        emptyState
+                    }
                 }
                 .padding(12)
             }
@@ -52,6 +55,23 @@ struct ContentView: View {
             }
         }
         .task { await store.onLaunch() }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            if let path = Bundle.main.path(forResource: "DAWG", ofType: "png"),
+               let dawg = NSImage(contentsOfFile: path) {
+                Image(nsImage: dawg)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: 150)
+            }
+            Text("No feeds — the dawg is waiting. Add one with +")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
     }
 
     @ViewBuilder
