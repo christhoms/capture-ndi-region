@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "ndi-region",
+    name: "capture-ndi-region",
     platforms: [.macOS(.v14)],
     targets: [
         .target(name: "CNDI"),

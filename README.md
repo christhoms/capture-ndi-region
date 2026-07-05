@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="Assets/logo_1024.png" width="180" alt="NDI Region — a region of a window, cropped and sent as NDI">
+  <img src="Assets/logo_1024.png" width="180" alt="Capture NDI Region — a region of a window, cropped and sent as NDI">
 </p>
 
-# ndi-region
+# Capture NDI Region
 
 Send a cropped, scaled **region of a macOS window** as an NDI source — the thing
 NDI Scan Converter can't do (it only offers full screens or whole windows).
@@ -12,27 +12,28 @@ runtime loaded via `dlopen` — no NDI SDK needed to build, just Swift/Xcode.
 
 Two front ends over the same core:
 
-- **NDI Region.app** — SwiftUI app managing multiple feeds (different windows or
-  different regions of the same window), each its own NDI source. Feeds persist
-  across launches; mark them Auto-start and the app is show-ready on open.
+- **Capture NDI Region.app** — SwiftUI app managing multiple feeds (different
+  windows or different regions of the same window), each its own NDI source.
+  Feeds persist across launches; mark them Auto-start and the app is show-ready
+  on open.
 - **ndi-region** — CLI for scripting/launchd.
 
 ## Build
 
 ```sh
 swift build -c release          # CLI at .build/release/ndi-region
-Scripts/make-app.sh             # app at dist/NDI Region.app
+Scripts/make-app.sh             # app at "dist/Capture NDI Region.app"
 ```
 
 ## App
 
 Each feed row: NDI name, window picker (defaults to auto-matching "ShowKontrol";
-phantom offscreen windows are marked `[offscreen]` and deprioritized), crop as
+offscreen phantom windows that never deliver frames are hidden), crop as
 **Bottom strip** (height in points, default 220) or **Custom rect** (x/y/w/h in
 window points, origin top-left), max output width (default 1920), FPS, and
 Auto-start. Add rows with **+** for multiple simultaneous NDI feeds.
 
-Config lives at `~/Library/Application Support/NDIRegion/feeds.json`.
+Config lives at `~/Library/Application Support/CaptureNDIRegion/feeds.json`.
 
 First launch prompts for Screen Recording permission. If it's missing (or you
 hit Deny by accident), the app shows a recovery banner: **Request Again** resets
@@ -43,14 +44,14 @@ the grant lands, the banner offers one-click relaunch (grants only take effect
 at launch). Rebuilding re-signs the app ad hoc, so macOS may occasionally ask
 again after a rebuild.
 
-## Usage
+## CLI
 
 ```sh
 # See what's capturable
 ndi-region --list
 
-# Bottom 400pt of the biggest grandMA3 onPC window, scaled to max 1920px wide
-ndi-region --app app_gma3 --bottom 400 --max-width 1920 --name "MA3 Letterbox"
+# Bottom 220pt of the ShowKontrol window, scaled to max 1920px wide
+ndi-region --app ShowKontrol --bottom 220 --max-width 1920 --name "SK Decks Only"
 
 # Pin an exact window (ids from --list)
 ndi-region --window-id 1431 --bottom 400
@@ -70,19 +71,32 @@ ndi-region --window-id 1431 --bottom 400
 | `--dump-frame <path>` | — | Also write the first captured frame to a PNG (verify your crop) |
 
 Ctrl-C stops cleanly. The window is tracked by id, so it keeps streaming when
-moved, occluded, or resized (the crop re-glues to the bottom edge within ~2s of
-a resize).
+moved, occluded, or resized (the crop re-glues to the target region within ~2s
+of a resize).
+
+## NDI runtime
+
+The NDI library is **not bundled** (NDI's license doesn't allow casual
+redistribution) — it's discovered at launch from, in order:
+
+1. `$NDI_RUNTIME_DIR_V6` / `$NDI_RUNTIME_DIR_V5`
+2. `/usr/local/lib/libndi.dylib` (the official [NDI runtime installer](https://ndi.link/NDIRedistV6Apple) and NDI Tools put it here)
+3. The NDI SDK install (`/Library/NDI SDK for Apple`)
+4. Runtimes bundled inside common NDI apps (Resolume, NDI Video Monitor)
+
+If none is found, the app shows a banner with a download link and a **Re-check**
+button — installing the runtime does not require relaunching the app. For the
+CLI, install the runtime or set `NDI_RUNTIME_DIR_V5` to a folder containing
+`libndi.dylib`. Both print which runtime they loaded.
 
 ## Notes
 
 - **Retina:** the crop is captured at native pixel density, then scaled down —
-  a 1695pt-wide window yields a 3390px-wide crop, scaled to 1920px. Output
+  a 1710pt-wide window yields a 3420px-wide crop, scaled to 1920px. Output
   dimensions are rounded to even numbers for encoder friendliness.
-- **Permission:** the terminal running it needs Screen Recording permission
-  (System Settings → Privacy & Security → Screen Recording).
-- **NDI runtime discovery order:** `$NDI_RUNTIME_DIR_V6` / `$NDI_RUNTIME_DIR_V5`,
-  `/usr/local/lib/libndi.dylib`, the NDI SDK install path, Resolume's bundled
-  runtime, NDI Video Monitor's bundled runtime. It prints which one it loaded.
+- **Permission:** the terminal running the CLI needs Screen Recording permission
+  (System Settings → Privacy & Security → Screen Recording). The app has its own
+  permission identity.
 - Frames are only delivered when the window content changes (ScreenCaptureKit
   behaviour); NDI receivers hold the last frame, so static content is fine.
 - The app icon is generated from the source assets by `swift Scripts/make-icon.swift`

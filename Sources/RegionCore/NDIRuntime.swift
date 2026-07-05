@@ -13,13 +13,15 @@ final class NDIRuntime {
     let sendVideo: NDIlib_send_send_video_v2_fn
     let sendDestroy: NDIlib_send_destroy_fn
 
-    private static var cached: Result<NDIRuntime, Error>?
+    private static var cached: NDIRuntime?
 
     static func shared() throws -> NDIRuntime {
-        if let cached { return try cached.get() }
-        let result = Result { try NDIRuntime() }
-        cached = result
-        return try result.get()
+        if let cached { return cached }
+        // Only cache success — a user can install the NDI runtime while we run
+        // and a later call should pick it up without relaunching.
+        let runtime = try NDIRuntime()
+        cached = runtime
+        return runtime
     }
 
     static func runtimeCandidates() -> [String] {

@@ -130,17 +130,14 @@ func selectWindow(_ windows: [WindowInfo], opts: Options) throws -> WindowInfo {
         }
         return true
     }
-    // Offscreen windows usually never deliver frames, so prefer on-screen ones.
-    let ranked = matches.sorted {
-        ($0.isOnScreen ? 0 : 1, -$0.size.width * $0.size.height)
-            < ($1.isOnScreen ? 0 : 1, -$1.size.width * $1.size.height)
-    }
-    guard let window = ranked.first else {
+    guard let window = matches.max(by: {
+        $0.size.width * $0.size.height < $1.size.width * $1.size.height
+    }) else {
         throw RuntimeError("No window matching --app \"\(appQuery)\""
             + (opts.title.map { " --title \"\($0)\"" } ?? "") + ". Use --list to see windows.")
     }
     if matches.count > 1 {
-        log("Note: \(matches.count) windows matched; using the largest on-screen one (id \(window.id), \"\(window.title)\"). Use --window-id to pin one.")
+        log("Note: \(matches.count) windows matched; using the largest (id \(window.id), \"\(window.title)\"). Use --window-id to pin one.")
     }
     return window
 }

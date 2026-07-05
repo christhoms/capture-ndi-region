@@ -26,6 +26,7 @@ final class FeedStore: ObservableObject {
     @Published var footerNote: String = ""
     @Published private(set) var statuses: [UUID: FeedStatus] = [:]
     @Published private(set) var permission: ScreenPermission = .granted
+    @Published private(set) var ndiRuntimeMissing = false
 
     private var permissionPoll: Task<Void, Never>?
 
@@ -39,16 +40,24 @@ final class FeedStore: ObservableObject {
     private var isLoading = false
 
     private var configURL: URL {
-        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("NDIRegion", isDirectory: true)
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let dir = appSupport.appendingPathComponent("CaptureNDIRegion", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("feeds.json")
     }
 
+    /// Pre-rename config location, read once as a migration fallback.
+    private var legacyConfigURL: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("NDIRegion/feeds.json")
+    }
+
     init() {
         isLoading = true
-        if let data = try? Data(contentsOf: configURL),
-           let saved = try? JSONDecoder().decode([Feed].self, from: data), !saved.isEmpty {
+        let data = (try? Data(contentsOf: configURL)) ?? (try? Data(contentsOf: legacyConfigURL))
+        if let data, let saved = try? JSONDecoder().decode([Feed].self, from: data),
+           !saved.isEmpty {
             feeds = saved
         } else {
             feeds = [Feed(name: "SK Decks Only", appQuery: "ShowKontrol")]
@@ -80,12 +89,27 @@ final class FeedStore: ObservableObject {
             startPermissionPolling()
         }
         await refreshWindows()
-        let ndiPath = NDIInfo.runtimePath
-        footerNote = ndiPath.map { "NDI runtime: \($0)" }
-            ?? "No NDI runtime found — install NDI Tools"
+        recheckNDIRuntime()
         guard permission == .granted else { return }
         for feed in feeds where feed.autoStart {
             await start(id: feed.id)
+        }
+    }
+
+    // MARK: - NDI runtime discovery
+
+    /// dlopen retries on every call until it succeeds, so installing the NDI
+    /// runtime while we run just needs a re-check, not a relaunch.
+    func recheckNDIRuntime() {
+        let path = NDIInfo.runtimePath
+        ndiRuntimeMissing = path == nil
+        footerNote = path.map { "NDI runtime: \($0)" } ?? "No NDI runtime found"
+    }
+
+    func openNDIDownload() {
+        // NDI's official runtime-only redistributable for macOS.
+        if let url = URL(string: "https://ndi.link/NDIRedistV6Apple") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -109,7 +133,7 @@ final class FeedStore: ObservableObject {
     /// own TCC entry makes the permission undetermined again, so the system
     /// prompt genuinely reappears.
     func requestPermissionAgain() {
-        let bundleID = Bundle.main.bundleIdentifier ?? "uk.co.christhoms.ndiregion"
+        let bundleID = Bundle.main.bundleIdentifier ?? "uk.co.christhoms.capturendiregion"
         let reset = Process()
         reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
         reset.arguments = ["reset", "ScreenCapture", bundleID]
@@ -216,13 +240,9 @@ final class FeedStore: ObservableObject {
         if let sel = feed.selectedWindowID, let w = windows.first(where: { $0.id == sel }) {
             return w
         }
-        // Offscreen windows usually never deliver frames, so prefer on-screen ones.
         let candidates = windows
             .filter { $0.app.localizedCaseInsensitiveContains(feed.appQuery) }
-            .sorted {
-                ($0.isOnScreen ? 0 : 1, -$0.size.width * $0.size.height)
-                    < ($1.isOnScreen ? 0 : 1, -$1.size.width * $1.size.height)
-            }
+            .sorted { $0.size.width * $0.size.height > $1.size.width * $1.size.height }
         if !feed.titleQuery.isEmpty {
             if let exact = candidates.first(where: { $0.title == feed.titleQuery }) { return exact }
             if let partial = candidates.first(where: {
