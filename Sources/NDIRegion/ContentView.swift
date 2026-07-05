@@ -6,6 +6,11 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if store.ndiRuntimeMissing {
+                runtimeBanner
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
+            }
             if store.permission != .granted {
                 permissionBanner
                     .padding(.horizontal, 12)
@@ -72,6 +77,27 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
+    }
+
+    private var runtimeBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "shippingbox")
+                .foregroundStyle(.red)
+                .font(.title3)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("NDI runtime not found")
+                    .font(.callout.bold())
+                Text("Feeds can't start without it. Install the free NDI runtime (or NDI Tools), then re-check — no relaunch needed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Re-check") { store.recheckNDIRuntime() }
+            Button("Download NDI Runtime") { store.openNDIDownload() }
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(10)
+        .background(.red.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
     }
 
     @ViewBuilder

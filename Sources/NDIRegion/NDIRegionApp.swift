@@ -7,7 +7,7 @@ struct NDIRegionApp: App {
     @StateObject private var store = FeedStore()
 
     var body: some Scene {
-        Window("NDI Region", id: "main") {
+        Window("Capture NDI Region", id: "main") {
             ContentView()
                 .environmentObject(store)
         }
