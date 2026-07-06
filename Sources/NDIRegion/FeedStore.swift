@@ -343,7 +343,13 @@ final class FeedStore: NSObject, ObservableObject {
             let sender = try NDISender(name: feed.name)
             if let window = resolveWindow(for: feed, in: windows) {
                 feeds[index].selectedWindowID = window.id
-                try await beginCapture(id: id, window: window, sender: sender)
+                do {
+                    try await beginCapture(id: id, window: window, sender: sender)
+                } catch {
+                    // Don't leave a ghost NDI source on the network.
+                    sender.shutdown()
+                    statuses[id] = .error("\(error)")
+                }
             } else {
                 // Go on air anyway: slate until the window shows up.
                 enterWaiting(id: id, sender: sender, title: "Waiting for window")
@@ -475,8 +481,10 @@ final class FeedStore: NSObject, ObservableObject {
         if let sel = feed.selectedWindowID, let w = list.first(where: { $0.id == sel }) {
             return w
         }
+        guard !feed.appQuery.isEmpty || !feed.titleQuery.isEmpty else { return nil }
+        // Empty app query with a title query means "any app".
         let candidates = list
-            .filter { queryMatches($0.app, feed.appQuery) }
+            .filter { feed.appQuery.isEmpty || queryMatches($0.app, feed.appQuery) }
             .sorted { $0.size.width * $0.size.height > $1.size.width * $1.size.height }
         if !feed.titleQuery.isEmpty {
             if let exact = candidates.first(where: { $0.title == feed.titleQuery }) { return exact }
@@ -484,7 +492,8 @@ final class FeedStore: NSObject, ObservableObject {
                 queryMatches($0.title, feed.titleQuery)
             }) { return partial }
         }
-        return candidates.first
+        // Title-only feeds must match on title; never fall back to "any window".
+        return feed.appQuery.isEmpty ? nil : candidates.first
     }
 
     /// Case-insensitive substring by default; a query containing * or ?
