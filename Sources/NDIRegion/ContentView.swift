@@ -121,6 +121,40 @@ struct ContentView: View {
                     Label("Add Feed", systemImage: "plus")
                 }
                 .help("Add another NDI feed")
+                Menu {
+                    Section("Load preset (adds a feed)") {
+                        ForEach(store.allPresets) { preset in
+                            Button(preset.name) { store.addFeed(from: preset) }
+                        }
+                    }
+                    if !store.feeds.isEmpty {
+                        Section("Save feed as preset") {
+                            ForEach(store.feeds) { feed in
+                                Button(feed.name) { store.savePreset(from: feed) }
+                            }
+                        }
+                    }
+                    if !store.userPresets.isEmpty {
+                        Menu("Delete Preset") {
+                            ForEach(store.userPresets) { preset in
+                                Button(preset.name, role: .destructive) {
+                                    store.deletePreset(id: preset.id)
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Label("Presets", systemImage: "square.stack")
+                }
+                .help("Load, save, or delete feed presets")
+                Menu {
+                    Button("Choose Slate Image…") { store.chooseSlateImage() }
+                    Button("Use Built-in Dawg") { store.resetSlateImage() }
+                        .disabled(!store.hasCustomSlateImage)
+                } label: {
+                    Label("Options", systemImage: "gearshape")
+                }
+                .help("Customize the image shown while a feed waits for its window")
             }
         }
     }
@@ -134,9 +168,14 @@ struct ContentView: View {
                     .scaledToFit()
                     .frame(height: 150)
             }
-            Text("No feeds — the dawg is waiting. Add one with +")
+            Text("No feeds — the dawg is waiting. Add one with + or start from a preset:")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                ForEach(store.allPresets) { preset in
+                    Button(preset.name) { store.addFeed(from: preset) }
+                }
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
@@ -270,16 +309,29 @@ struct FeedRow: View {
     }
 
     private var windowPicker: some View {
-        Picker("", selection: Binding<UInt32?>(
-            get: { feed.selectedWindowID },
-            set: { store.noteSelection(feedID: feed.id, windowID: $0) }
-        )) {
-            Text("Auto: \(feed.appQuery)").tag(UInt32?.none)
-            ForEach(store.windows) { w in
-                Text(w.label).tag(UInt32?.some(w.id))
+        HStack(spacing: 6) {
+            Picker("", selection: Binding<UInt32?>(
+                get: { feed.selectedWindowID },
+                set: { store.noteSelection(feedID: feed.id, windowID: $0) }
+            )) {
+                Text(feed.appQuery.isEmpty ? "Auto (match below)" : "Auto: \(feed.appQuery)")
+                    .tag(UInt32?.none)
+                ForEach(store.windows) { w in
+                    Text(w.label).tag(UInt32?.some(w.id))
+                }
+            }
+            .labelsHidden()
+            if feed.selectedWindowID == nil {
+                TextField("App match (* ? ok)", text: $feed.appQuery)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 130)
+                    .help("App name to match — case-insensitive substring, or a * / ? glob")
+                TextField("Title match", text: $feed.titleQuery)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 110)
+                    .help("Optional window-title match — substring or * / ? glob")
             }
         }
-        .labelsHidden()
         .disabled(isRunning)
     }
 
@@ -294,6 +346,13 @@ struct FeedRow: View {
             Label(size, systemImage: "dot.radiowaves.left.and.right")
                 .font(.caption.bold())
                 .foregroundStyle(.green)
+        case .waiting(let message):
+            Label(message, systemImage: "hourglass")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .lineLimit(2)
+                .frame(maxWidth: 220)
+                .help(message)
         case .error(let message):
             Text(message)
                 .font(.caption)

@@ -40,13 +40,35 @@ Scripts/make-release.sh 1.2.3   # signed + notarized release zips (needs a
 
 ## App
 
-Each feed row: NDI name, window picker (defaults to auto-matching "ShowKontrol";
-offscreen phantom windows that never deliver frames are hidden), crop as
-**Bottom strip** (height in points, default 220) or **Custom rect** (x/y/w/h in
-window points, origin top-left), max output width (default 1920), FPS, and
-Auto-start. Add rows with **+** for multiple simultaneous NDI feeds.
+Each feed row: NDI name, window picker (pick an exact window, or leave it on
+**Auto** and type app/title match text — case-insensitive substring, or a `*`
+/ `?` glob like `Show*`; offscreen phantom windows that never deliver frames
+are hidden), crop as **Bottom strip** (height in points, default 220) or
+**Custom rect** (x/y/w/h in window points, origin top-left), max output width
+(default 1920), FPS, and Auto-start. Add rows with **+** for multiple
+simultaneous NDI feeds.
+
+**Presets:** the Presets toolbar menu loads a preset as a new feed row, saves
+any current feed as a preset (named after its NDI name; same name overwrites),
+and deletes saved ones. "ShowKontrol Decks" ships built in; your own are
+stored in `presets.json` alongside the config. A fresh install starts with no
+feeds and offers the presets as one-click starting points. Since feeds persist
+across launches (Auto-start included), loading a preset once sets it up for
+every launch.
 
 Config lives at `~/Library/Application Support/CaptureNDIRegion/feeds.json`.
+
+**Source loss & recovery:** if the captured window goes away (source app quit,
+window closed), the feed does not die. The NDI source stays on air showing a
+"Window went away" slate — the studio dawg on a dark card — so receivers keep
+the source and anyone watching knows what happened. Meanwhile the app watches
+for a window matching the feed's app/title match and reattaches automatically
+when one appears (typically within ~2s of the source app coming back).
+Starting a feed whose window doesn't exist yet behaves the same way, so an
+Auto-start feed is show-ready even when the source app launches later. Got
+your own dawg? Options → **Choose Slate Image…** puts any image on the slate
+instead (copied into the config folder, so the original can move); **Use
+Built-in Dawg** switches back.
 
 **Show mode:** the window is designed to disappear. The close button doesn't
 quit — it collapses the window to a slim titlebar strip (live-feed count, an
