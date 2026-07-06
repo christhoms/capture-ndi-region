@@ -2,11 +2,14 @@ import AppKit
 import Foundation
 import RegionCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum FeedStatus: Equatable {
     case stopped
     case starting
     case running(String)
+    /// Sender still on air (showing the slate), watching for the window to come back.
+    case waiting(String)
     case error(String)
 }
 
@@ -23,6 +26,7 @@ final class FeedStore: NSObject, ObservableObject {
         didSet { if !isLoading { save() } }
     }
     @Published var windows: [WindowInfo] = []
+    @Published private(set) var userPresets: [FeedPreset] = []
     @Published var footerNote: String = ""
     @Published private(set) var statuses: [UUID: FeedStatus] = [:]
     @Published private(set) var permission: ScreenPermission = .granted
@@ -39,16 +43,31 @@ final class FeedStore: NSObject, ObservableObject {
         let poll: Task<Void, Never>
     }
 
+    private struct Waiting {
+        let sender: NDISender
+        let watch: Task<Void, Never>
+    }
+
     private var running: [UUID: Running] = [:]
+    private var waiting: [UUID: Waiting] = [:]
+    /// Last live output size per feed, so the slate matches and receivers
+    /// don't see a resolution change.
+    private var lastPixelSize: [UUID: (w: Int, h: Int)] = [:]
     private var isLoading = false
 
-    private var configURL: URL {
+    private var supportDir: URL {
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let dir = appSupport.appendingPathComponent("CaptureNDIRegion", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("feeds.json")
+        return dir
     }
+
+    private var configURL: URL { supportDir.appendingPathComponent("feeds.json") }
+    private var presetsURL: URL { supportDir.appendingPathComponent("presets.json") }
+    /// Extension-less on purpose: NSImage(data:) sniffs the format, so any
+    /// image type the user picks just works.
+    private var slateImageURL: URL { supportDir.appendingPathComponent("slate-image") }
 
     /// Pre-rename config location, read once as a migration fallback.
     private var legacyConfigURL: URL {
@@ -64,8 +83,12 @@ final class FeedStore: NSObject, ObservableObject {
         if let data, let saved = try? JSONDecoder().decode([Feed].self, from: data),
            !saved.isEmpty {
             feeds = saved
-        } else {
-            feeds = [Feed(name: "SK Decks Only", appQuery: "ShowKontrol")]
+        }
+        // First launch: no feeds — the empty state offers presets instead of
+        // silently assuming everyone wants the author's ShowKontrol setup.
+        if let presetData = try? Data(contentsOf: presetsURL),
+           let saved = try? JSONDecoder().decode([FeedPreset].self, from: presetData) {
+            userPresets = saved
         }
         isLoading = false
     }
@@ -217,57 +240,227 @@ final class FeedStore: NSObject, ObservableObject {
     }
 
     func addFeed() {
-        feeds.append(Feed(name: "Region \(feeds.count + 1)", appQuery: "ShowKontrol"))
+        feeds.append(Feed(name: "Region \(feeds.count + 1)", appQuery: ""))
+    }
+
+    // MARK: - Presets
+
+    /// Built-ins plus the user's own; a user preset with the same name as a
+    /// built-in shadows it.
+    var allPresets: [FeedPreset] {
+        let userNames = Set(userPresets.map(\.name))
+        return FeedPreset.builtIns.filter { !userNames.contains($0.name) } + userPresets
+    }
+
+    func addFeed(from preset: FeedPreset) {
+        var feed = preset.feed
+        feed.id = UUID()  // presets keep their template's id; feeds need fresh ones
+        feed.selectedWindowID = nil
+        feeds.append(feed)
+    }
+
+    /// The preset takes the feed's NDI name; saving again under the same name
+    /// overwrites.
+    func savePreset(from feed: Feed) {
+        var template = feed
+        template.selectedWindowID = nil
+        userPresets.removeAll { $0.name == feed.name }
+        userPresets.append(FeedPreset(name: feed.name, feed: template))
+        userPresets.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        savePresets()
+        footerNote = "Saved preset \"\(feed.name)\""
+    }
+
+    func deletePreset(id: UUID) {
+        guard let preset = userPresets.first(where: { $0.id == id }) else { return }
+        userPresets.removeAll { $0.id == id }
+        savePresets()
+        footerNote = "Deleted preset \"\(preset.name)\""
+    }
+
+    private func savePresets() {
+        if let data = try? JSONEncoder().encode(userPresets) {
+            try? data.write(to: presetsURL, options: .atomic)
+        }
+    }
+
+    // MARK: - Slate image
+
+    var hasCustomSlateImage: Bool {
+        FileManager.default.fileExists(atPath: slateImageURL.path)
+    }
+
+    func chooseSlateImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Choose the image shown on the NDI output while a feed waits for its window"
+        guard panel.runModal() == .OK, let url = panel.url,
+              let data = try? Data(contentsOf: url), NSImage(data: data) != nil else { return }
+        try? data.write(to: slateImageURL, options: .atomic)
+        footerNote = "Slate image set — used next time a feed loses its window"
+    }
+
+    func resetSlateImage() {
+        try? FileManager.default.removeItem(at: slateImageURL)
+        footerNote = "Slate image reset to the studio dawg"
+    }
+
+    /// Custom image if one is set, otherwise the bundled dawg.
+    private func slateImage() -> NSImage? {
+        if let data = try? Data(contentsOf: slateImageURL), let image = NSImage(data: data) {
+            return image
+        }
+        if let path = Bundle.main.path(forResource: "DAWG", ofType: "png") {
+            return NSImage(contentsOfFile: path)
+        }
+        return nil
     }
 
     func removeFeed(id: UUID) async {
         await stop(id: id)
         feeds.removeAll { $0.id == id }
         statuses[id] = nil
+        lastPixelSize[id] = nil
     }
 
     func start(id: UUID) async {
-        guard running[id] == nil, let index = feeds.firstIndex(where: { $0.id == id }) else { return }
+        guard running[id] == nil, waiting[id] == nil,
+              let index = feeds.firstIndex(where: { $0.id == id }) else { return }
         statuses[id] = .starting
-        if windows.isEmpty { await refreshWindows() }
+        // Always re-enumerate: window ids from an earlier scan may be dead
+        // (restarting a feed against a stale list is how feeds got stuck).
+        await refreshWindows()
 
         let feed = feeds[index]
-        guard let window = resolveWindow(for: feed) else {
-            statuses[id] = .error("No window matching \"\(feed.appQuery)\"")
+        guard feed.selectedWindowID != nil || !feed.appQuery.isEmpty || !feed.titleQuery.isEmpty
+        else {
+            statuses[id] = .error("Pick a window or type an app name to match")
             return
         }
-        feeds[index].selectedWindowID = window.id
-
         do {
             let sender = try NDISender(name: feed.name)
-            let capture = RegionCapture(window: window.scWindow, sender: sender, spec: feed.regionSpec)
-            capture.onStatus = { [weak self] w, h in
-                Task { @MainActor in self?.statuses[id] = .running("\(w)×\(h)") }
+            if let window = resolveWindow(for: feed, in: windows) {
+                feeds[index].selectedWindowID = window.id
+                try await beginCapture(id: id, window: window, sender: sender)
+            } else {
+                // Go on air anyway: slate until the window shows up.
+                enterWaiting(id: id, sender: sender, title: "Waiting for window")
             }
-            capture.onStop = { [weak self] error in
-                Task { @MainActor in
-                    guard let self else { return }
-                    if let r = self.running.removeValue(forKey: id) {
-                        r.poll.cancel()
-                        r.sender.shutdown()
-                    }
-                    self.statuses[id] = error.map { .error($0.localizedDescription) } ?? .stopped
-                }
-            }
-            try await capture.start(window: window.scWindow)
-            let poll = Task {
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    await capture.refreshIfResized()
-                }
-            }
-            running[id] = Running(capture: capture, sender: sender, poll: poll)
         } catch {
             statuses[id] = .error("\(error)")
         }
     }
 
+    /// Wire up and start a capture on an existing (possibly reused) sender.
+    private func beginCapture(id: UUID, window: WindowInfo, sender: NDISender) async throws {
+        guard let feed = feeds.first(where: { $0.id == id }) else {
+            sender.shutdown()
+            return
+        }
+        let capture = RegionCapture(window: window.scWindow, sender: sender, spec: feed.regionSpec)
+        capture.onStatus = { [weak self] w, h in
+            Task { @MainActor in
+                self?.lastPixelSize[id] = (w, h)
+                self?.statuses[id] = .running("\(w)×\(h)")
+            }
+        }
+        capture.onStop = { [weak self] error in
+            Task { @MainActor in
+                // Manual stop already cleaned up; only unexpected stops land here.
+                guard let self, let r = self.running.removeValue(forKey: id) else { return }
+                r.poll.cancel()
+                if error != nil {
+                    self.enterWaiting(id: id, sender: r.sender)
+                } else {
+                    r.sender.shutdown()
+                    self.statuses[id] = .stopped
+                }
+            }
+        }
+        capture.onSourceLost = { [weak self] in
+            Task { @MainActor in
+                guard let self, let r = self.running.removeValue(forKey: id) else { return }
+                r.poll.cancel()
+                await r.capture.stop()
+                self.enterWaiting(id: id, sender: r.sender)
+            }
+        }
+        try await capture.start(window: window.scWindow)
+        let poll = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                await capture.refreshIfResized()
+            }
+        }
+        running[id] = Running(capture: capture, sender: sender, poll: poll)
+    }
+
+    /// The window is gone (or was never there): keep the NDI source alive with
+    /// the slate and watch for a window matching the feed's queries; reattach
+    /// automatically when one appears.
+    private func enterWaiting(id: UUID, sender: NDISender, title: String = "Window went away") {
+        guard waiting[id] == nil else {
+            sender.shutdown()
+            return
+        }
+        guard let feed = feeds.first(where: { $0.id == id }) else {
+            sender.shutdown()
+            return
+        }
+        let target = feed.titleQuery.isEmpty
+            ? feed.appQuery : "\(feed.appQuery) — \(feed.titleQuery)"
+        statuses[id] = .waiting("\(title) — watching for \"\(target)\"")
+        let size = lastPixelSize[id] ?? (w: 1280, h: 720)
+        let slate = SlateRenderer.render(
+            width: size.w, height: size.h,
+            title: title,
+            subtitle: "Watching for \(target) — reconnects automatically",
+            image: slateImage())
+        let fps = Int32(feed.fps)
+
+        let watch = Task { [weak self] in
+            while !Task.isCancelled {
+                slate.send(via: sender, fps: fps)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                guard let feed = self.feeds.first(where: { $0.id == id }) else { return }
+                let fresh = (try? await WindowEnumerator.capturableWindows()) ?? []
+                if let window = self.resolveWindow(for: feed, in: fresh) {
+                    self.reattach(id: id, window: window, sender: sender)
+                    return
+                }
+            }
+        }
+        waiting[id] = Waiting(sender: sender, watch: watch)
+    }
+
+    private func reattach(id: UUID, window: WindowInfo, sender: NDISender) {
+        waiting[id] = nil  // the watch task returns right after calling us
+        if let index = feeds.firstIndex(where: { $0.id == id }) {
+            feeds[index].selectedWindowID = window.id
+        }
+        statuses[id] = .starting
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.beginCapture(id: id, window: window, sender: sender)
+            } catch {
+                // Matched but couldn't attach (window died again mid-start) —
+                // back to watching.
+                self.enterWaiting(id: id, sender: sender)
+            }
+        }
+    }
+
     func stop(id: UUID) async {
+        if let w = waiting.removeValue(forKey: id) {
+            w.watch.cancel()
+            w.sender.shutdown()
+            statuses[id] = .stopped
+            return
+        }
         guard let r = running.removeValue(forKey: id) else { return }
         r.poll.cancel()
         await r.capture.stop()
@@ -276,20 +469,33 @@ final class FeedStore: NSObject, ObservableObject {
     }
 
     /// Explicit picker choice wins; otherwise best match for the saved queries.
-    private func resolveWindow(for feed: Feed) -> WindowInfo? {
-        if let sel = feed.selectedWindowID, let w = windows.first(where: { $0.id == sel }) {
+    /// Matching is against a caller-supplied list so the reattach watcher can
+    /// use a fresh enumeration without churning the published `windows`.
+    private func resolveWindow(for feed: Feed, in list: [WindowInfo]) -> WindowInfo? {
+        if let sel = feed.selectedWindowID, let w = list.first(where: { $0.id == sel }) {
             return w
         }
-        let candidates = windows
-            .filter { $0.app.localizedCaseInsensitiveContains(feed.appQuery) }
+        let candidates = list
+            .filter { queryMatches($0.app, feed.appQuery) }
             .sorted { $0.size.width * $0.size.height > $1.size.width * $1.size.height }
         if !feed.titleQuery.isEmpty {
             if let exact = candidates.first(where: { $0.title == feed.titleQuery }) { return exact }
             if let partial = candidates.first(where: {
-                $0.title.localizedCaseInsensitiveContains(feed.titleQuery)
+                queryMatches($0.title, feed.titleQuery)
             }) { return partial }
         }
         return candidates.first
+    }
+
+    /// Case-insensitive substring by default; a query containing * or ?
+    /// is treated as a glob matched against the whole string
+    /// (e.g. "Show*" or "*Kontrol*").
+    private func queryMatches(_ text: String, _ query: String) -> Bool {
+        guard !query.isEmpty else { return false }
+        if query.contains("*") || query.contains("?") {
+            return NSPredicate(format: "SELF LIKE[cd] %@", query).evaluate(with: text)
+        }
+        return text.localizedCaseInsensitiveContains(query)
     }
 
     /// Keep saved queries in sync when the user picks a window explicitly.

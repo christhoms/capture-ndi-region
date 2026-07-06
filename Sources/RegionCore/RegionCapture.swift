@@ -31,11 +31,15 @@ public final class RegionCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private let windowID: CGWindowID
     private var stream: SCStream?
     private var lastWindowSize: CGSize = .zero
+    private var missCount = 0
     private var frameCount = 0
     private let frameQueue = DispatchQueue(label: "ndi-region.frames")
 
     /// Called when the stream stops (nil error = clean stop requested by us).
     public var onStop: ((Error?) -> Void)?
+    /// Called once when the target window disappears from enumeration
+    /// (two consecutive misses, so a single flaky enumeration doesn't trigger it).
+    public var onSourceLost: (() -> Void)?
     /// Called with the output pixel size when capture starts or reconfigures.
     public var onStatus: ((Int, Int) -> Void)?
     /// Human-readable progress messages.
@@ -126,8 +130,11 @@ public final class RegionCapture: NSObject, SCStreamOutput, SCStreamDelegate {
             let content = try await SCShareableContent.excludingDesktopWindows(
                 false, onScreenWindowsOnly: false)
             guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
-                return  // window gone; keep last config, frames just stop
+                missCount += 1
+                if missCount == 2 { onSourceLost?() }
+                return
             }
+            missCount = 0
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let size = filter.contentRect.size
             guard size != lastWindowSize else { return }
