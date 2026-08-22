@@ -49,10 +49,6 @@ ndi-region --window-id 1431 --bottom 400
 - Config and presets: `~/Library/Application Support/CaptureNDIRegion/`.
 - Auto and `--app`/`--title` matching: case-insensitive substring or `*`/`?`
   glob.
-- A feed whose window disappears stays on air with a slate and reattaches
-  when a matching window returns.
-- Windows are tracked by id; streaming continues through moves, occlusion,
-  and resizes.
 - `CNR_START_COLLAPSED=1` starts the app collapsed.
 - The crop is captured at native pixel density, then scaled; output
   dimensions are rounded to even.
