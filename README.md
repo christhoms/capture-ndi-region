@@ -4,15 +4,18 @@
 
 # Capture NDI Region
 
-Sends a cropped, scaled region of a macOS window as an NDI source.
+NDI source with definable regions of interest.
+- Target individual application windows as sources
+- Crop / Scale regions within windows
+- Limit FPS to reduce network/processing load
 
-**Capture NDI Region.app** runs multiple simultaneous feeds; **ndi-region**
-is the CLI for scripting or launchd. Both use ScreenCaptureKit and load the
-NDI runtime at launch via `dlopen`, so building requires Swift/Xcode but not
-the NDI SDK.
+**Capture NDI Region.app** 
+MacOS native SwiftUI App
 
-Universal builds are on
-[Releases](https://github.com/christhoms/capture-ndi-region/releases).
+**ndi-region**
+CLI for scripting. 
+
+Universal builds: [Releases](https://github.com/christhoms/capture-ndi-region/releases).
 An NDI runtime is required; see [NDI runtime](#ndi-runtime).
 
 ## Build
@@ -50,12 +53,9 @@ ndi-region --window-id 1431 --bottom 400
 - Auto and `--app`/`--title` matching: case-insensitive substring or `*`/`?`
   glob.
 - `CNR_START_COLLAPSED=1` starts the app collapsed.
-- The crop is captured at native pixel density, then scaled; output
-  dimensions are rounded to even.
-- Frames are delivered only when window content changes; NDI receivers hold
-  the last frame.
-- Screen Recording permission is required. For the CLI it is the terminal's
-  permission.
+- Crop is captured at native pixel density, scaled output dimensions are rounded to even numbers.
+- Frames are sent only when window content changes.
+- Screen Recording permission is required and will be requested on first launch.
 
 ## NDI runtime
 
