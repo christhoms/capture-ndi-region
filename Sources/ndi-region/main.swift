@@ -3,7 +3,7 @@ import RegionCore
 import ScreenCaptureKit
 
 let usage = """
-ndi-region — send a cropped, scaled region of a macOS window as an NDI source
+ndi-region: send a cropped, scaled region of a macOS window as an NDI source
 
 USAGE:
   ndi-region --list
