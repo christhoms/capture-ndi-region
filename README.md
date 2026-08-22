@@ -41,7 +41,7 @@ top-left), max output width, FPS, and Auto-start. **+** adds more feeds.
 - If the captured window goes away, the NDI source stays on air showing a
   slate image and reattaches when a matching window appears, typically within
   ~2s. Starting a feed before its window exists works the same way.
-  Options → **Choose Slate Image…** replaces the built-in slate.
+  Options > **Choose Slate Image...** replaces the built-in slate.
 - Close collapses the window to a slim titlebar strip instead of quitting;
   Cmd-W or Cmd-Q quits. `CNR_START_COLLAPSED=1` starts collapsed, for launchd.
 - The app needs Screen Recording permission and prompts on first launch. After
@@ -93,7 +93,7 @@ needed after installing. For the CLI, install the runtime or set
 - The crop is captured at native (Retina) pixel density, then scaled. Output
   dimensions are rounded to even numbers for encoder compatibility.
 - The terminal running the CLI needs Screen Recording permission
-  (System Settings → Privacy & Security → Screen Recording).
+  (System Settings > Privacy & Security > Screen Recording).
 - Frames are delivered only when window content changes (ScreenCaptureKit
   behaviour); NDI receivers hold the last frame.
 

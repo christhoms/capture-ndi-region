@@ -12,5 +12,5 @@
 ## Writing
 
 READMEs and docs follow hq `writing-north-star.md`: functional and truthful,
-no sales language, no em dashes, no comparisons to other products, under ~700
+no sales language, ASCII only, no comparisons to other products, under ~700
 words.
