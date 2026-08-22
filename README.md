@@ -1,33 +1,23 @@
 <p align="center">
-  <img src="Assets/logo_1024.png" width="180" alt="Capture NDI Region — a region of a window, cropped and sent as NDI">
+  <img src="Assets/logo_1024.png" width="180" alt="Capture NDI Region logo">
 </p>
 
 # Capture NDI Region
 
-Send a cropped, scaled **region of a macOS window** as an NDI source — the thing
-NDI Scan Converter can't do (it only offers full screens or whole windows).
+Sends a cropped, scaled region of a macOS window as an NDI source. NDI Scan
+Converter only offers full screens or whole windows.
 
-Built with ScreenCaptureKit (GPU crop + scale, no CPU pixel pushing) and the NDI
-runtime loaded via `dlopen` — no NDI SDK needed to build, just Swift/Xcode.
-
-Two front ends over the same core:
-
-- **Capture NDI Region.app** — SwiftUI app managing multiple feeds (different
-  windows or different regions of the same window), each its own NDI source.
-  Feeds persist across launches; mark them Auto-start and the app is show-ready
-  on open.
-- **ndi-region** — CLI for scripting/launchd.
+Two front ends: **Capture NDI Region.app** (SwiftUI, multiple simultaneous
+feeds) and **ndi-region** (CLI, for scripting or launchd). Both use
+ScreenCaptureKit and load the NDI runtime at launch via `dlopen`, so building
+requires Swift/Xcode but not the NDI SDK.
 
 ## Download
 
-Grab the latest signed & notarized universal (Apple Silicon + Intel) builds
-from [Releases](https://github.com/christhoms/capture-ndi-region/releases):
-
-- `Capture-NDI-Region-<version>.zip` — the app; unzip and drop in /Applications
-- `ndi-region-cli-<version>.zip` — the CLI binary
-
-You'll also need an NDI runtime if you don't have one — see
-[NDI runtime](#ndi-runtime) below (the app links you to it too).
+Signed, notarized universal builds are on
+[Releases](https://github.com/christhoms/capture-ndi-region/releases):
+`Capture-NDI-Region-<version>.zip` (app) and `ndi-region-cli-<version>.zip`
+(CLI). An NDI runtime is also required — see [NDI runtime](#ndi-runtime).
 
 ## Build from source
 
@@ -40,63 +30,30 @@ Scripts/make-release.sh 1.2.3   # signed + notarized release zips (needs a
 
 ## App
 
-Each feed row: NDI name, window picker (pick an exact window, or leave it on
-**Auto** and type app/title match text — case-insensitive substring, or a `*`
-/ `?` glob like `Show*`; offscreen phantom windows that never deliver frames
-are hidden), crop as **Bottom strip** (height in points, default 220) or
-**Custom rect** (x/y/w/h in window points, origin top-left), max output width
-(default 1920), FPS, and Auto-start. Add rows with **+** for multiple
-simultaneous NDI feeds.
+Each feed row sets the NDI name, the window (exact pick, or **Auto** with
+app/title match text — case-insensitive substring or `*`/`?` glob), the crop
+(**Bottom strip** height or **Custom rect** x/y/w/h, in window points, origin
+top-left), max output width, FPS, and Auto-start. **+** adds more feeds.
 
-**Presets:** the Presets toolbar menu loads a preset as a new feed row, saves
-any current feed as a preset (named after its NDI name; same name overwrites),
-and deletes saved ones. "ShowKontrol Decks" ships built in; your own are
-stored in `presets.json` alongside the config. A fresh install starts with no
-feeds and offers the presets as one-click starting points. Since feeds persist
-across launches (Auto-start included), loading a preset once sets it up for
-every launch.
-
-Config lives at `~/Library/Application Support/CaptureNDIRegion/feeds.json`.
-
-**Source loss & recovery:** if the captured window goes away (source app quit,
-window closed), the feed does not die. The NDI source stays on air showing a
-"Window went away" slate — the studio dawg on a dark card — so receivers keep
-the source and anyone watching knows what happened. Meanwhile the app watches
-for a window matching the feed's app/title match and reattaches automatically
-when one appears (typically within ~2s of the source app coming back).
-Starting a feed whose window doesn't exist yet behaves the same way, so an
-Auto-start feed is show-ready even when the source app launches later. Got
-your own dawg? Options → **Choose Slate Image…** puts any image on the slate
-instead (copied into the config folder, so the original can move); **Use
-Built-in Dawg** switches back.
-
-**Show mode:** the window is designed to disappear. The close button doesn't
-quit — it collapses the window to a slim titlebar strip (live-feed count, an
-expand chevron, a quit button); it also auto-collapses after launch when
-auto-start feeds come up cleanly. Pressing close again while collapsed — or
-Cmd-W / Cmd-Q any time — quits instantly. Fullscreen is disabled (it makes no
-sense for a utility strip). Launch with `CNR_START_COLLAPSED=1` to start
-collapsed, e.g. from launchd.
-
-First launch prompts for Screen Recording permission. If it's missing (or you
-hit Deny by accident), the app shows a recovery banner: **Request Again** resets
-the app's TCC entry (`tccutil reset ScreenCapture <bundle-id>`) so the system
-prompt genuinely reappears — macOS never re-prompts on its own after a denial —
-and **Open System Settings** jumps straight to the Screen Recording pane. Once
-the grant lands, the banner offers one-click relaunch (grants only take effect
-at launch). Rebuilding re-signs the app ad hoc, so macOS may occasionally ask
-again after a rebuild.
+- Feeds persist in `~/Library/Application Support/CaptureNDIRegion/feeds.json`.
+  Auto-start feeds begin streaming on launch.
+- The Presets toolbar menu saves and loads feed configurations
+  (`presets.json`). One preset ships built in.
+- If the captured window goes away, the NDI source stays on air showing a
+  slate image and reattaches when a matching window appears, typically within
+  ~2s. Starting a feed before its window exists works the same way.
+  Options → **Choose Slate Image…** replaces the built-in slate.
+- Close collapses the window to a slim titlebar strip instead of quitting;
+  Cmd-W or Cmd-Q quits. `CNR_START_COLLAPSED=1` starts collapsed, for launchd.
+- The app needs Screen Recording permission and prompts on first launch. After
+  a denial, a banner can reset the TCC entry and re-prompt (macOS never
+  re-prompts on its own) and relaunch once granted.
 
 ## CLI
 
 ```sh
-# See what's capturable
-ndi-region --list
-
-# Bottom 220pt of the ShowKontrol window, scaled to max 1920px wide
+ndi-region --list                # list capturable windows
 ndi-region --app ShowKontrol --bottom 220 --max-width 1920 --name "SK Decks Only"
-
-# Pin an exact window (ids from --list)
 ndi-region --window-id 1431 --bottom 400
 ```
 
@@ -106,44 +63,40 @@ ndi-region --window-id 1431 --bottom 400
 | `--title <substr>` | — | Additionally match by window title |
 | `--window-id <id>` | — | Capture an exact window id from `--list` |
 | `--bottom <pt>` | 400 | Height of the bottom strip, in window points |
-| `--rect <x,y,w,h>` | — | Arbitrary crop rect in window points, origin top-left (overrides `--bottom`) |
+| `--rect <x,y,w,h>` | — | Crop rect in window points, origin top-left (overrides `--bottom`) |
 | `--max-width <px>` | 1920 | Output width cap; height follows aspect ratio |
 | `--fps <n>` | 30 | Frame rate cap |
 | `--name <s>` | `Region - <app>` | NDI source name |
 | `--cursor` | off | Include the mouse cursor |
-| `--dump-frame <path>` | — | Also write the first captured frame to a PNG (verify your crop) |
+| `--dump-frame <path>` | — | Write the first captured frame to a PNG |
 
-Ctrl-C stops cleanly. The window is tracked by id, so it keeps streaming when
-moved, occluded, or resized (the crop re-glues to the target region within ~2s
-of a resize).
+The window is tracked by id, so streaming continues when it is moved,
+occluded, or resized. Ctrl-C stops cleanly.
 
 ## NDI runtime
 
-The NDI library is **not bundled** (NDI's license doesn't allow casual
-redistribution) — it's discovered at launch from, in order:
+The NDI library is not bundled (NDI's license does not allow redistribution).
+It is searched for at launch, in order:
 
 1. `$NDI_RUNTIME_DIR_V6` / `$NDI_RUNTIME_DIR_V5`
-2. `/usr/local/lib/libndi.dylib` (the official [NDI runtime installer](https://ndi.link/NDIRedistV6Apple) and NDI Tools put it here)
+2. `/usr/local/lib/libndi.dylib` — where the
+   [NDI runtime installer](https://ndi.link/NDIRedistV6Apple) and NDI Tools
+   put it
 3. The NDI SDK install (`/Library/NDI SDK for Apple`)
 4. Runtimes bundled inside common NDI apps (Resolume, NDI Video Monitor)
 
-If none is found, the app shows a banner with a download link and a **Re-check**
-button — installing the runtime does not require relaunching the app. For the
-CLI, install the runtime or set `NDI_RUNTIME_DIR_V5` to a folder containing
-`libndi.dylib`. Both print which runtime they loaded.
+If none is found, the app shows a banner with a download link; no relaunch is
+needed after installing. For the CLI, install the runtime or set
+`NDI_RUNTIME_DIR_V5` to a folder containing `libndi.dylib`.
 
 ## Notes
 
-- **Retina:** the crop is captured at native pixel density, then scaled down —
-  a 1710pt-wide window yields a 3420px-wide crop, scaled to 1920px. Output
-  dimensions are rounded to even numbers for encoder friendliness.
-- **Permission:** the terminal running the CLI needs Screen Recording permission
-  (System Settings → Privacy & Security → Screen Recording). The app has its own
-  permission identity.
-- Frames are only delivered when the window content changes (ScreenCaptureKit
-  behaviour); NDI receivers hold the last frame, so static content is fine.
-- The app icon is generated from the source assets by `swift Scripts/make-icon.swift`
-  (then repackaged into `Assets/AppIcon.icns`).
+- The crop is captured at native (Retina) pixel density, then scaled. Output
+  dimensions are rounded to even numbers for encoder compatibility.
+- The terminal running the CLI needs Screen Recording permission
+  (System Settings → Privacy & Security → Screen Recording).
+- Frames are delivered only when window content changes (ScreenCaptureKit
+  behaviour); NDI receivers hold the last frame.
 
 ---
 
